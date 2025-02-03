@@ -111,15 +111,27 @@ SELF_CLOSING_TAGS = [
     "link", "meta", "param", "source", "track", "wbr",
 ]
 
+BLOCK_ELEMENTS = [
+    "html", "body", "article", "section", "nav", "aside",
+    "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
+    "footer", "address", "p", "hr", "pre", "blockquote",
+    "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
+    "figcaption", "main", "div", "table", "form", "fieldset",
+    "legend", "details", "summary"
+]
+
 class Text:
     def __init__(self, text, parent):
         self.text = text
+        # для согласования классов элементов в парсере
         self.children = []
         self.parent = parent
     
     def __repr__(self):
         return repr(self.text)
 
+# Класс для тегов
+# Element, а не тег, так как 1 тег это по сути открывающий и закрывающий
 class Element:
     def __init__(self, tag, attributes, parent):
         self.tag = tag
@@ -132,7 +144,9 @@ class Element:
 
 class HTMLParser:
     def __init__(self, body):
+        # исходный анализируемый код
         self.body = body
+        # здесь храним открытые, но не успевшие закрыться на данный момент теги
         self.unfinished = []
         self.HEAD_TAGS = [
             "base", "basefont", "bgsound", "noscript",
@@ -140,11 +154,11 @@ class HTMLParser:
         ]
 
     def add_text(self, text):
-        # doctype <!-- --> and etc
+        # пропускаем строку состояющую из пробелов
+        # например "/n" после пропуска <!doctype> на странице
         if text.isspace(): return
         self.implicit_tags(None)
-        # берем последний элемент незакрытого тега из стека
-        # и кладем элемент текста в "parent" тег
+
         parent = self.unfinished[-1]
         node = Text(text, parent)
         parent.children.append(node)
@@ -175,7 +189,7 @@ class HTMLParser:
         # extract all attrs and process self closing tags
         # закрывающий тег, тоесть должны вытащить предыдущий
         if tag.startswith("/"):
-            #  нет незавершенного узла, к которому можно было бы его добавить
+            # по порядку открытые и закрытые теги
             if len(self.unfinished) == 1: return
             node = self.unfinished.pop()
             parent = self.unfinished[-1]
@@ -196,6 +210,7 @@ class HTMLParser:
         # так как html парсер "щадящий"
         # мы закроем все теги, которые забыл проставить пользователь сами
         while len(self.unfinished) > 1:
+            # как эти теги будут влиять на разметку?
             node = self.unfinished.pop()
             parent = self.unfinished[-1]
             parent.children.append(node)
@@ -205,6 +220,7 @@ class HTMLParser:
     # Этот валидатор вызывается в функция парсинга перед обработкой элемента
     def implicit_tags(self, tag):
         while True:
+            # мапка анфинишед нод
             open_tags = [node.tag for node in self.unfinished]
             # неявный html (если последний тег и нет html)
             if open_tags == [] and tag != "html":
@@ -249,48 +265,108 @@ def print_tree(node, indent=0):
         print_tree(child, indent + 2)
 
 # Браузерный лейаут (макет) / Вычисление позиции на станице
+
+# Принимает на вход дерево элементов которые мы спарсили и добавляем к ним свойства Макета (Layout)
+
 # оутпут называется display list это стандартное название в браузерах
-class Layout:
-    def __init__(self, tokens, width):
-        self.display_list = []
+# ПОДРОБНЕЕ - https://browser.engineering/layout.html#the-layout-tree
+class BlockLayout:
+    def __init__(self, tokens, parent, previous):
+        # tree props
+        # дефолтные пропсы для структуры дерева
+        self.node = tokens
+        self.parent = parent
+        self.previous = previous
+        self.children = []
+        # self properties
+        # display_list = только слова с их стилями и координатами
+        self.display_list = [] 
         self.size = 12
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
-        self.width = width
         self.weight = "normal"
         self.style = "roman"
         self.font = tkfont.Font()
         self.line = []
-        self.startLayout(tokens)
         self.flush()
+        # page position
+        self.x = None
+        self.y = None
+        self.width = None
+        self.height = None
         # поле нужное для вычисления x позиций текста на странице
 
-    def startLayout(self, tokens):
-        self.recurse(tokens)
+    def layout(self):
+        self.x = self.parent.x
+        self.width = self.parent.width
+        # Вертикальное положение макета объекта зависит от того есть ли у элемента сиблинг
+        # чтобы выровнять по нему
+        if self.previous:
+            # self.y = начало пред блока + его высота
+            self.y = self.previous.y + self.previous.height
+        # если нет сиблинга берем "y" родителя
+        else:
+            self.y = self.parent.y
 
+        mode = self.layout_mode()
+
+        if mode == "block":
+            # Каждый блок = родитель
+            # минимальная высота блока родителя это вся высота всех его дочерних элементов
+            self.height = sum([child.height for child in self.children])
+            self.layout_intermediate()
+        else:
+            # высота текста это высота родительского элемента
+            self.height = self.cursor_y
+            # для текст ноды его координаты всегда относительны его самого
+            self.cursor_x = 0
+            self.cursor_y = 0
+            self.weight = "normal"
+            self.style = "roman"
+            self.size = 12
+
+            self.line = []
+            self.recurse(self.node)
+            self.flush()
+        # Dom iterations
+        for child in self.children:
+            child.layout()
+
+
+    # Сбрасывание оставшихся стилей и координатов текста до нулевых для след строки
+    # 1. необходимо выровнять слова по базовой линии (см. рисунок 5);
+    # 2. он должен добавить все эти слова в список отображения; и
+    # 3. необходимо обновить поля cursor_xи cursor_y .
     def flush(self):
         if not self.line: return
+        # координаты + выравниваем по линии (вычисление самого высокого слова в линии)
         metrics = [self.font.metrics() for x, word, font in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
         
-        for x, word, font in self.line:
-            y = baseline - font.metrics("ascent")
+        # добавляем текст в дисплей лист
+        for rel_x, word, font in self.line:
+            x = self.x + rel_x
+            y = self.y + baseline - font.metrics("ascent")
             self.display_list.append((x, y, word, font))
         
+        # обновляем поля x,y
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
-        self.cursor_x = HSTEP
+        self.cursor_x = 0
         self.line = []
 
     def processWord(self, word):
+        # для одного и того же начертания не создаем инстансы шрифтов и лейблов (КЕШ)
         font = get_font(size=self.size, weight=self.weight, style=self.style)
         w = font.measure(word)
+
+        # Буфер где слова удерживаются прежде чем мы будем их рисовать
         self.line.append((self.cursor_x, word, font))
         # двигаем текст по х вправо
         self.cursor_x += w + font.measure(' ')
         # делаем перенос строки когда текс по x ушел за окно
-        if self.cursor_x + w > self.width - HSTEP:
+        if self.cursor_x + w > self.width:
             self.flush()
 
     def open_tag(self, tag):
@@ -318,6 +394,40 @@ class Layout:
         elif tag == "big":
             self.size -= 4
 
+    # Функция отвечает за тип элеммента inline или block элемент сейас обрабатывается
+    # определит что мы обрабатываем <p> | <h1> блоки и тд. Либо <big>, <small> TextNode инлайн элементы.
+    def layout_mode(self):
+        if isinstance(self.node, Text):
+            return "inline"
+        # Если тип ноды Element (против Text) и чилдрены элемента блочные элементы
+        elif any([isinstance(child, Element) and child.tag in BLOCK_ELEMENTS for child in self.node.children]):
+            return "block"
+        elif self.node.children:
+            return "inline"
+        else:
+            return "block"
+
+    # построение блоков вертикально
+    # манипулирование деревьями:
+    # Макета (Layout): self, previous, next
+    # DOM (Parsed Tokens): self.node, child
+    # self.children = Layout "(так как next это инстанс BlockLayout)"
+    def layout_intermediate(self):
+        # собираем сиблингов для BlockLayout(,,previous)
+        previous = None
+        # dfs
+        for child in self.node.children:
+            # Этот код содержит обработку как (output HTMLParser (html parser tree === HTML TREE === DOM))
+            # Так и Layout дерево с теми же полями node, chilren, previous
+            # Они отличаются 
+            # child = DOM
+            # self.node = DOM
+            # next, self, previous = LayoutTREE
+            next = BlockLayout(child, self, previous)
+            self.children.append(next)
+            previous = next
+            
+    # Обработка ТЕКСТОВЫХ элементов или их стилизаций <b>, <small> ...
     def recurse(self, tree):
         if isinstance(tree, Text):
             for word in tree.text.split():
@@ -327,6 +437,37 @@ class Layout:
             for child in tree.children:
                 self.recurse(child)
             self.close_tag(tree.tag)
+
+
+# Родительский (корневой элемент для Layout) document
+class DocumentLayout:
+    def __init__(self, node):
+        # DOM
+        self.node = node
+        self.parent = None
+        # Layout (так как в self.children кладем инстанс класса block layout)
+        self.children = []
+        # page x,y
+        self.x = None
+        self.y = None
+        self.width = None
+        self.height = None
+
+    def layout(self):
+        # роль заключается в создании дочерних объектов макета
+        child = BlockLayout(self.node, self, None)
+        self.children.append(child)
+         # Определяем изначальные значения координатов рут дерева
+        # child.layout();  ????????????
+
+        self.width = WIDTH - 2*HSTEP
+        self.x = HSTEP
+        self.y = VSTEP
+        child.layout();
+
+        # то самое нисходящее определние высоты
+        child.layout()
+        self.height = child.height
 
 # UI нашнего браузера 
 class Browser:
@@ -344,16 +485,8 @@ class Browser:
         # Tk позволяет вам привязать функцию к клавише, которая инструктирует Tk вызывать эту функцию при нажатии клавиши.
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Up>", self.scrollup)
-        self.window.bind("<Configure>", self.resize)
+        # self.window.bind("<Configure>", self.resize)
         SCROLL_STEP = 100
-
-    # очень неоптимизированный ресайз
-    def resize(self, e):
-        self.windowWith = e.width
-        self.windowHeight = e.height
-
-        self.display_list = Layout(self.cachedToken, self.windowWith).display_list
-        self.draw()
 
     # функция скрола
     def scrolldown(self, e):
@@ -382,9 +515,13 @@ class Browser:
     def load(self, url):
         body = url.request()
         self.nodes = HTMLParser(body).parse()
-        self.cachedToken = self.nodes;
-        self.display_list = Layout(self.nodes, self.windowWidth).display_list
-        self.draw()
+        # self.cachedToken = self.nodes;
+        # self.document = object with global property ad display list now
+        self.document = DocumentLayout(self.nodes)
+        self.document.layout();
+        # print_tree(self.nodes)
+        # self.display_list = self.document.children[0].display_list
+        # self.draw()
 
 if __name__ == "__main__":
     import sys
