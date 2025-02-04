@@ -345,8 +345,6 @@ class BlockLayout:
         else:
             self.y = self.parent.y
 
-        print(self.node)
-
         mode = self.layout_mode()
 
         if mode == "block":
@@ -547,7 +545,9 @@ class Browser:
     # функция скрола
     def scrolldown(self, e):
         # прибавляем оффсет скролу, от которого зависит отрисовка в .draw()
-        self.scroll += SCROLL_STEP
+        max_y = max(self.document.height + 2 * VSTEP - HEIGHT, 0)
+        # если конец странице меньше - дальше не листаем
+        self.scroll = min(self.scroll + SCROLL_STEP, max_y)
         self.draw()
 
          # функция скрола
