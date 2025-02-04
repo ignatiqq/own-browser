@@ -84,12 +84,6 @@ class URL:
 import tkinter
 import tkinter.font as tkfont
 
-window = tkinter.Tk()
-bi_times = tkfont.Font(
-    family="Times New Roman",
-    size=16,
-)
-
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 30, 18
 SCROLL_STEP = 100
@@ -353,7 +347,7 @@ class BlockLayout:
     def flush(self):
         if not self.line: return
         # координаты + выравниваем по линии (вычисление самого высокого слова в линии)
-        metrics = [self.font.metrics() for x, word, font in self.line]
+        metrics = [font.metrics() for x, word, font in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
         
@@ -364,23 +358,24 @@ class BlockLayout:
             self.display_list.append((x, y, word, font))
         
         # обновляем поля x,y
-        max_descent = max([metric["descent"] for metric in metrics])
-        self.cursor_y = baseline + 1.25 * max_descent
         self.cursor_x = 0
         self.line = []
+        max_descent = max([metric["descent"] for metric in metrics])
+        self.cursor_y = baseline + 1.25 * max_descent
 
     def processWord(self, word):
         # для одного и того же начертания не создаем инстансы шрифтов и лейблов (КЕШ)
         font = get_font(size=self.size, weight=self.weight, style=self.style)
         w = font.measure(word)
 
+        if self.cursor_x + w > self.width:
+            self.flush()
+
         # Буфер где слова удерживаются прежде чем мы будем их рисовать
         self.line.append((self.cursor_x, word, font))
         # двигаем текст по х вправо
         self.cursor_x += w + font.measure(' ')
         # делаем перенос строки когда текс по x ушел за окно
-        if self.cursor_x + w > self.width:
-            self.flush()
 
     def open_tag(self, tag):
         if tag == "i":
@@ -461,13 +456,9 @@ class DocumentLayout:
         # DOM
         self.node = node
         self.parent = None
+        self.previos = None
         # Layout (так как в self.children кладем инстанс класса block layout)
         self.children = []
-        # page x,y
-        self.x = None
-        self.y = None
-        self.width = None
-        self.height = None
 
     def layout(self):
         child = BlockLayout(self.node, self, None)
@@ -486,15 +477,15 @@ class DocumentLayout:
 # UI нашнего браузера 
 class Browser:
     def __init__(self):
-        self.window = window
+        self.window = tkinter.Tk()
         self.canvas = tkinter.Canvas(
             self.window,
             width=WIDTH,
             height=HEIGHT
         )
+        self.canvas.pack()
         self.windowWidth = WIDTH;
         self.windowHeight = HEIGHT;
-        self.canvas.pack(fill=tkinter.BOTH, expand=True)
         self.scroll = 0
         # Tk позволяет вам привязать функцию к клавише, которая инструктирует Tk вызывать эту функцию при нажатии клавиши.
         self.window.bind("<Down>", self.scrolldown)
