@@ -259,6 +259,14 @@ class HTMLParser:
             self.add_text(text)
         return self.finish()
 
+# Функция получающая объект макета и извлекающая из него дисплей лист
+# соединяет с массивом дислей лист из 2 аргумента и рисует их
+def paint_tree(layout_object, display_list):
+    display_list.extend(layout_object.paint())
+
+    for child in layout_object.children:
+        paint_tree(child, display_list)
+
 def print_tree(node, indent=0):
     print(" " * indent, node)
     for child in node.children:
@@ -299,6 +307,7 @@ class BlockLayout:
     def layout(self):
         self.x = self.parent.x
         self.width = self.parent.width
+        
         # Вертикальное положение макета объекта зависит от того есть ли у элемента сиблинг
         # чтобы выровнять по нему
         if self.previous:
@@ -311,13 +320,8 @@ class BlockLayout:
         mode = self.layout_mode()
 
         if mode == "block":
-            # Каждый блок = родитель
-            # минимальная высота блока родителя это вся высота всех его дочерних элементов
-            self.height = sum([child.height for child in self.children])
             self.layout_intermediate()
         else:
-            # высота текста это высота родительского элемента
-            self.height = self.cursor_y
             # для текст ноды его координаты всегда относительны его самого
             self.cursor_x = 0
             self.cursor_y = 0
@@ -328,9 +332,18 @@ class BlockLayout:
             self.line = []
             self.recurse(self.node)
             self.flush()
+
         # Dom iterations
         for child in self.children:
             child.layout()
+
+        if mode == "block":
+            # Каждый блок = родитель
+            # минимальная высота блока родителя это вся высота всех его дочерних элементов
+            self.height = sum([child.height for child in self.children])
+        else:
+            # высота текста это высота родительского элемента
+            self.height = self.cursor_y
 
 
     # Сбрасывание оставшихся стилей и координатов текста до нулевых для след строки
@@ -438,6 +451,9 @@ class BlockLayout:
                 self.recurse(child)
             self.close_tag(tree.tag)
 
+    def paint(self):
+        return self.display_list
+
 
 # Родительский (корневой элемент для Layout) document
 class DocumentLayout:
@@ -454,20 +470,18 @@ class DocumentLayout:
         self.height = None
 
     def layout(self):
-        # роль заключается в создании дочерних объектов макета
         child = BlockLayout(self.node, self, None)
         self.children.append(child)
-         # Определяем изначальные значения координатов рут дерева
-        # child.layout();  ????????????
 
         self.width = WIDTH - 2*HSTEP
         self.x = HSTEP
         self.y = VSTEP
-        child.layout();
-
-        # то самое нисходящее определние высоты
         child.layout()
         self.height = child.height
+
+    def paint(self):
+        return []
+
 
 # UI нашнего браузера 
 class Browser:
@@ -519,9 +533,10 @@ class Browser:
         # self.document = object with global property ad display list now
         self.document = DocumentLayout(self.nodes)
         self.document.layout();
-        # print_tree(self.nodes)
-        # self.display_list = self.document.children[0].display_list
-        # self.draw()
+        # merge created LAYOUT OBJECT display list
+        self.display_list = []
+        paint_tree(self.document, self.display_list)
+        self.draw()
 
 if __name__ == "__main__":
     import sys
