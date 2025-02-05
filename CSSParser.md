@@ -1,0 +1,1 @@
+LL parser - https://en.wikipedia.org/wiki/LL_parser (рекурсивно спусковой анализом)
