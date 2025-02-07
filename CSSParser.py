@@ -103,6 +103,7 @@ class CSSParser:
         while not self.isAtEnd() and not self.match('{'):
             tag = self.word()
             descendant = TagSelector(tag.casefold())
+             # .rule.depentrule {}
             out = DescendantSelector(out, descendant)
             self.whitespace()
         return out

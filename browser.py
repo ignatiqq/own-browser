@@ -3,6 +3,7 @@ from drawers import DrawText, DrawRect
 from url import URL
 from nodes import Text, Element
 from debug import print_tree, flat_tree
+from selectors import cascade_priority
 from htmlParser import HTMLParser
 
 
@@ -359,7 +360,7 @@ class Browser:
             rules.extend(CSSParser(body).parse())
 
         print("before")
-        style(self.nodes, rules)
+        style(self.nodes, sorted(rules, key=cascade_priority))
         # LAYOUTING
         self.document = DocumentLayout(self.nodes)
         self.document.layout();

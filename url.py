@@ -82,7 +82,7 @@ class URL:
     def resolve(self, url):
         # absoulute url (nothing to do)
         if "://" in url: return URL(url)
-        if not url.startsWith('/'):
+        if not url.startswith('/'):
             dir, _ = self.path.rsplit("/", 1)
             while url.startswith("../"):
                 _, url = url.split("/", 1)

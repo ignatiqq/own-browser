@@ -4,6 +4,8 @@ from nodes import Element
 class TagSelector:
     def __init__(self, tag):
         self.tag = tag
+        # specifity
+        self.priority = 1
     
     def matches(self, node):
         return isinstance(node, Element) and self.tag == node.tag
@@ -15,6 +17,8 @@ class DescendantSelector:
         self.ancestor = ancestor
         # Selector
         self.descendant = descendant
+        # priority sum of tags/selectors
+        self.priority = ancestor.priority + descendant.priority
     
     def matches(self, node):
         if not self.descendant.matches(node): return False
@@ -25,4 +29,6 @@ class DescendantSelector:
         
         return False
 
-    
+def cascade_priority(rule):
+    selector, body = rule
+    return selector.priority
