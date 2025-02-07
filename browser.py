@@ -2,7 +2,7 @@ from CSSParser import CSSParser
 from drawers import DrawText, DrawRect
 from url import URL
 from nodes import Text, Element
-from debug import print_tree
+from debug import print_tree, flat_tree
 from htmlParser import HTMLParser
 
 
@@ -340,6 +340,25 @@ class Browser:
         self.nodes = HTMLParser(body).parse()
         # CSS
         rules = DEFAULT_STYLE_SHEET.copy()
+        links = [node.attributes["href"]
+                 for node in flat_tree(self.nodes, [])
+                 if isinstance(node, Element)
+                 and node.tag == "link"
+                 and node.attributes.get("rel") == "stylesheet"
+                 and "href" in node.attributes]
+        for link in links:
+            print(link)
+            style_url = url.resolve(link)
+            print(style_url)
+            try:
+                body = style_url.request()
+            except:
+                print('Error while fetch data: ', link)
+                continue
+            
+            rules.extend(CSSParser(body).parse())
+
+        print("before")
         style(self.nodes, rules)
         # LAYOUTING
         self.document = DocumentLayout(self.nodes)

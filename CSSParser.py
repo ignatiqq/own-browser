@@ -89,7 +89,6 @@ class CSSParser:
             self.eat(' ')
 
     def literal(self, literal):
-        print(literal, self.i)
         if not (not self.isAtEnd() and self.match(literal)):
             raise Exception("Parsing error")
         else:
@@ -114,19 +113,13 @@ class CSSParser:
 
         while not self.isAtEnd():
             try:
-                print("ANOTHER")
                 self.whitespace()
                 selector = self.selector()
-                print("PREEE")
                 self.literal('{')
-                print("asf")
                 self.whitespace()
                 body = self.body()
-                print(self.i, 'after body')
                 self.literal('}')
-                print(self.i, 'after }')
                 rules.append((selector, body))
-                print("append")
             except Exception:
                 print("Exception parse()")
                 why = self.ignore_until(['}'])
