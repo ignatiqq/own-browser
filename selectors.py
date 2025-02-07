@@ -1,3 +1,5 @@
+from nodes import Element
+
 # TagSelector for selectors like this: 'a, pre, section'
 class TagSelector:
     def __init__(self, tag):
@@ -15,7 +17,7 @@ class DescendantSelector:
         self.descendant = descendant
     
     def matches(self, node):
-        if not self.descendant.matches(node) return False
+        if not self.descendant.matches(node): return False
 
         while node.parent:
             if self.ancestor.matches(node.parent): return True
