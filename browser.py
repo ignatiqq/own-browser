@@ -2,7 +2,7 @@ from CSSParser import CSSParser
 from drawers import DrawText, DrawRect
 from url import URL
 from nodes import Text, Element
-from debug import print_tree, flat_tree
+from debug import print_tree, print_node, print_node_style, flat_tree
 from selectors import cascade_priority
 from htmlParser import HTMLParser
 
@@ -34,9 +34,28 @@ BLOCK_ELEMENTS = [
     "legend", "details", "summary"
 ]
 
+# свойства, которые будут наследоваться от родителей
+INHERITED_PROPERTIES = {
+    "font-size": "16px",
+    "font-style": "normal",
+    "font-weight": "normal",
+    "color": "black",
+}
+
 def style(node, rules):
     node.style = {}
 
+    # все каскадирование стилей происходит в порядке переопределения
+
+    # inherit styles
+    for prop, default_val in INHERITED_PROPERTIES.items():
+        # не идем рекурсивно вверх до родителя с правилами, так как style нисходящий и каждый раз у родителя 100% будут/не будут эти стили
+        if node.parent:
+            node.style[prop] = node.parent.style[prop]
+        else:
+            node.style[prop] = default_val
+
+    # selecotr styles
     for selector, body in rules:
         if not selector.matches(node): continue
         for prop, value in body.items():
@@ -47,6 +66,16 @@ def style(node, rules):
         pairs = CSSParser(node.attributes["style"]).body()
         for prop, value in pairs.items():
             node.style[prop] = value
+
+    # вычисления процентного размера шрифта от родителя
+    if node.style["font-size"].endswith("%"):
+        if node.parent:
+            parent_font_size = node.parent.style["font-size"]
+        else:
+            parent_font_size = INHERITED_PROPERTIES["font-size"]
+        node_pct = float(node.style["font-size"][:-1]) / 100
+        parent_px = float(parent_font_size[:-2])
+        node.style["font-size"] = str(node_pct * parent_px) + "px"
             
     for child in node.children:
         style(child, rules)
@@ -143,15 +172,15 @@ class BlockLayout:
     def flush(self):
         if not self.line: return
         # координаты + выравниваем по линии (вычисление самого высокого слова в линии)
-        metrics = [font.metrics() for x, word, font in self.line]
+        metrics = [font.metrics() for x, word, font, color in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
         
         # добавляем текст в дисплей лист
-        for rel_x, word, font in self.line:
+        for rel_x, word, font, color in self.line:
             x = self.x + rel_x
             y = self.y + baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
+            self.display_list.append((x, y, word, font, color))
         
         # обновляем поля x,y
         self.cursor_x = 0
@@ -159,44 +188,23 @@ class BlockLayout:
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
 
-    def processWord(self, word):
-        # для одного и того же начертания не создаем инстансы шрифтов и лейблов (КЕШ)
-        font = get_font(size=self.size, weight=self.weight, style=self.style)
+    def processWord(self, node, word):
+        color = node.style["color"]
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
+        if style == "normal": style = "roman"
+        size = int(float(node.style["font-size"][:-2]) * .75)
+        font = get_font(size, weight, style)
         w = font.measure(word)
 
         if self.cursor_x + w > self.width:
             self.flush()
 
         # Буфер где слова удерживаются прежде чем мы будем их рисовать
-        self.line.append((self.cursor_x, word, font))
+        self.line.append((self.cursor_x, word, font, color))
         # двигаем текст по х вправо
         self.cursor_x += w + font.measure(' ')
         # делаем перенос строки когда текс по x ушел за окно
-
-    def open_tag(self, tag):
-        if tag == "i":
-            self.style ="italic"
-        elif tag == "b":
-            self.weight = "bold"
-        elif tag == "big":
-            self.size += 4
-        elif tag == "br":
-            self.flush()
-    # начертание текста в заивимости от тега <b><i>bold italic</i></b>, <b>bold</b>
-    def close_tag(self, tag):
-        if tag == "i":
-            self.style = "roman"
-        elif tag == "b":
-            self.weight = "normal"
-        elif tag == "small":
-            self.size += 2
-        elif tag == "p":
-            self.flush()
-            self.cursor_y += VSTEP
-        elif tag == "small":
-            self.size += 2
-        elif tag == "big":
-            self.size -= 4
 
     # Функция отвечает за тип элеммента inline или block элемент сейас обрабатывается
     # определит что мы обрабатываем <p> | <h1> блоки и тд. Либо <big>, <small> TextNode инлайн элементы.
@@ -235,12 +243,12 @@ class BlockLayout:
     def recurse(self, tree):
         if isinstance(tree, Text):
             for word in tree.text.split():
-                self.processWord(word)
+                self.processWord(tree, word)
         else:
-            self.open_tag(tree.tag)
+            if tree.tag == "br":
+                self.flush()
             for child in tree.children:
                 self.recurse(child)
-            self.close_tag(tree.tag)
 
     def paint(self):
         cmds = []
@@ -256,9 +264,10 @@ class BlockLayout:
                 cmds.append(rect);
 
         # Класс для рисования текста
+        # если лейаут класс инлайновый то можем покрасить текст
         if self.layout_mode() == "inline":
-            for x, y, word, font in self.display_list:
-                cmds.append(DrawText(x, y, word, font))
+            for x, y, word, font, color in self.display_list:
+                cmds.append(DrawText(x, y, word, font, color))
 
         return cmds
 
@@ -296,7 +305,8 @@ class Browser:
         self.canvas = tkinter.Canvas(
             self.window,
             width=WIDTH,
-            height=HEIGHT
+            height=HEIGHT,
+            bg="white"
         )
         self.canvas.pack()
         self.windowWidth = WIDTH;
@@ -348,9 +358,8 @@ class Browser:
                  and node.attributes.get("rel") == "stylesheet"
                  and "href" in node.attributes]
         for link in links:
-            print(link)
+            if 'fonts.googleapis.com' in link: continue
             style_url = url.resolve(link)
-            print(style_url)
             try:
                 body = style_url.request()
             except:
@@ -359,8 +368,9 @@ class Browser:
             
             rules.extend(CSSParser(body).parse())
 
-        print("before")
         style(self.nodes, sorted(rules, key=cascade_priority))
+        # print_tree(self.nodes, print_node_style)
+
         # LAYOUTING
         self.document = DocumentLayout(self.nodes)
         self.document.layout();

@@ -85,8 +85,11 @@ class CSSParser:
     # Функция анализа пробелов увеличивает индекс i после каждого символа пробела
     # Пробелы не имеют смысла, поэтому нет проанализированных данных для возврата
     def whitespace(self):
-        while not self.isAtEnd() and self.match(' '):
-            self.eat(' ')
+        while not self.isAtEnd() and (self.match(' ') or self.match('\n')):
+            if self.match(' '):
+                self.eat(' ')
+            elif self.match('\n'):
+                self.eat('\n')
 
     def literal(self, literal):
         if not (not self.isAtEnd() and self.match(literal)):
