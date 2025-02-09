@@ -43,9 +43,6 @@ class BlockLayout:
         # BlockLayout | LineLayout -> TextLayout
         self.children = []
         # self properties
-        # display_list = только слова с их стилями и координатами
-        # Одна единица дисплей лист это набор слов (объектов), стилизованных тегами имеющие разные аттрибуты
-        self.display_list = [] 
         self.size = 12
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
@@ -111,7 +108,6 @@ class BlockLayout:
         for rel_x, word, font, color in self.line:
             x = self.x + rel_x
             y = self.y + baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font, color))
         
         # обновляем поля x,y
         self.cursor_x = 0
@@ -199,21 +195,13 @@ class BlockLayout:
     def paint(self):
         cmds = []
 
-        # красим все pre блоки в серый
-        if isinstance(self.node, Element):
-            bgcolor = self.node.style.get("background-color", "transparent")
-            # определяем конечные точки по x,y учитывая длину и высоту
-            # чтобы получить квадратные координаты
-            if bgcolor != "transparent":
-                x2, y2 = self.x + self.width, self.y + self.height
-                rect = DrawRect(self.x, self.y, x2, y2, bgcolor)
-                cmds.append(rect);
-
-        # Класс для рисования текста
-        # если лейаут класс инлайновый то можем покрасить текст
-        if self.layout_mode() == "inline":
-            for x, y, word, font, color in self.display_list:
-                cmds.append(DrawText(x, y, word, font, color))
+        bgcolor = self.node.style.get("background-color", "transparent")
+        # определяем конечные точки по x,y учитывая длину и высоту
+        # чтобы получить квадратные координаты
+        if bgcolor != "transparent":
+            x2, y2 = self.x + self.width, self.y + self.height
+            rect = DrawRect(self.x, self.y, x2, y2, bgcolor)
+            cmds.append(rect);
 
         return cmds
 
