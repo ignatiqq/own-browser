@@ -1,4 +1,13 @@
 from selectors import TagSelector, DescendantSelector
+from nodes import Element
+
+# свойства, которые будут наследоваться от родителей
+INHERITED_PROPERTIES = {
+    "font-size": "16px",
+    "font-style": "normal",
+    "font-weight": "normal",
+    "color": "black",
+}
 
 # рекурсивные функции разбора based парсер
 class CSSParser:
@@ -136,3 +145,41 @@ class CSSParser:
         return rules
 
     
+
+def style(node, rules):
+    node.style = {}
+
+    # все каскадирование стилей происходит в порядке переопределения
+
+    # inherit styles
+    for prop, default_val in INHERITED_PROPERTIES.items():
+        # не идем рекурсивно вверх до родителя с правилами, так как style нисходящий и каждый раз у родителя 100% будут/не будут эти стили
+        if node.parent:
+            node.style[prop] = node.parent.style[prop]
+        else:
+            node.style[prop] = default_val
+
+    # selecotr styles
+    for selector, body in rules:
+        if not selector.matches(node): continue
+        for prop, value in body.items():
+            node.style[prop] = value
+
+    # style переопределяет стили из СSS
+    if isinstance(node, Element) and "style" in node.attributes:
+        pairs = CSSParser(node.attributes["style"]).body()
+        for prop, value in pairs.items():
+            node.style[prop] = value
+
+    # вычисления процентного размера шрифта от родителя
+    if node.style["font-size"].endswith("%"):
+        if node.parent:
+            parent_font_size = node.parent.style["font-size"]
+        else:
+            parent_font_size = INHERITED_PROPERTIES["font-size"]
+        node_pct = float(node.style["font-size"][:-1]) / 100
+        parent_px = float(parent_font_size[:-2])
+        node.style["font-size"] = str(node_pct * parent_px) + "px"
+            
+    for child in node.children:
+        style(child, rules)
